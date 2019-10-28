@@ -1,0 +1,7 @@
+.idea
+chronicle
+.python-version
+chronicle.egg-info/
+docs/
+mkdocs.yml
+site/
