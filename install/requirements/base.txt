@@ -1,0 +1,16 @@
+async-generator==1.10
+attrs==19.3.0
+boltons==19.2.0
+Click==7.0
+contextvars==2.4
+cron-descriptor==1.2.24
+croniter==0.3.30
+idna==2.8
+immutables==0.11
+outcome==1.0.1
+python-dateutil==2.8.0
+redis==3.3.8
+six==1.12.0
+sniffio==1.1.0
+sortedcontainers==2.1.0
+trio==0.12.1
