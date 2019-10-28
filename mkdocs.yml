@@ -1,0 +1,14 @@
+site_name: chronicle
+site_description: A cron-compatible job scheduling server
+nav:
+    - Introduction: 'index.md'
+    - User Guide: 'user_guide.md'
+    - Extending: 'extending.md'
+    - Internals: 'internals.md'
+    - Development: 'development.md'
+theme:
+    name: material
+markdown_extensions:
+    - admonition
+    - codehilite
+    - pymdownx.superfences

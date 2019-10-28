@@ -7,3 +7,4 @@ pytest-asyncio
 pytest-trio
 pytest-cov
 mkdocs
+mkdocs-material
