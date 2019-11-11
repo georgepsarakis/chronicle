@@ -1,16 +1,19 @@
 from collections.abc import Mapping
 from functools import total_ordering
+import json
 import logging
 import math
+import os
 from uuid import uuid4
 import subprocess
 import shlex
-import os
-import time
+import typing
 
 import trio
 
+
 from chronicle.interval import CronInterval
+from chronicle.scheduler import Clock
 
 import chronicle.logger as log_helper
 
@@ -56,6 +59,7 @@ class CronCommand:
         'LC_TIME',
         'PWD'
     )
+    FLUSH_STREAM_TIMEOUT = 30
 
     def __init__(self, command, **options):
         self._options = options
@@ -74,9 +78,27 @@ class CronCommand:
             command = shlex.split(command)
 
         self._command = command
-        self._process = None
         self._identifier = str(uuid4())
         self._started_at = None
+        self._process = None
+
+    def clone(self):
+        new_instance = self.__class__(self._command, **self._options)
+        new_instance._identifier = self.identifier
+        return new_instance
+
+    def _get_base_environment(self):
+        environment = os.environ.copy()
+        if self.environment is self.ENV_INHERIT_WHITELISTED_ONLY:
+            environment = {
+                variable: value
+                for variable, value in environment.items()
+                if variable in self.WHITELISTED_ENVIRONMENT_VARS
+            }
+        return environment
+
+    def as_tuple(self) -> tuple:
+        return self._get_base_environment(), self._get_executable()
 
     @property
     def environment(self):
@@ -118,8 +140,8 @@ class CronCommand:
             }
         environment.update(additional_environment or {})
 
-        with trio.move_on_after(self.timeout):
-            process = await trio.open_process(
+        with trio.move_on_after(self.timeout) as cancel_scope:
+            self._process = await trio.open_process(
                 self._get_executable(),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -131,21 +153,34 @@ class CronCommand:
                 log_helper.generate(
                     message=self._get_executable(),
                     task_id=self.identifier,
-                    pid=process.pid,
+                    pid=self.process.pid,
                     stream=None,
                     tags=['command', 'execution'],
                     status='PENDING'
                 )
             )
-            self._process = process
-            self._started_at = time.time()
+            self._started_at = Clock.get_current_timestamp()
             await self.show_progress()
+
+        if cancel_scope.cancelled_caught:
+            logger.error(
+                log_helper.generate(
+                    f'timeout since {self._started_at}',
+                    task_id=self.identifier,
+                    pid=self.process.pid,
+                    tags=['command', 'execution'],
+                    status='CANCELLED'
+                )
+            )
+
+            with trio.move_on_after(self.FLUSH_STREAM_TIMEOUT):
+                await self.flush_streams(final=True)
 
     async def flush_streams(self, final=False):
         streams_active = True
         while streams_active:
             streams_active = False
-            stdout = await self._process.stdout.receive_some()
+            stdout = await self.process.stdout.receive_some()
             if stdout:
                 streams_active = True
                 logger.info(
@@ -157,7 +192,7 @@ class CronCommand:
                     )
                 )
 
-            stderr = await self._process.stderr.receive_some()
+            stderr = await self.process.stderr.receive_some()
             if stderr:
                 streams_active = True
                 logger.info(
@@ -172,7 +207,7 @@ class CronCommand:
                 return
 
     async def show_progress(self):
-        while self._process is None:
+        while self.process is None:
             trio.sleep(0.01)
 
         logger.info(
@@ -185,7 +220,7 @@ class CronCommand:
             )
         )
 
-        while self._process.poll() is None:
+        while self.process.poll() is None:
             await self.flush_streams()
         await self.flush_streams(final=True)
 
@@ -204,10 +239,15 @@ class CronCommand:
     def __repr__(self):
         return f'CronCommand({self.command})'
 
+    def __hash__(self):
+        return hash(json.dumps(self.as_tuple()))
+
 
 @total_ordering
 class Job:
-    def __init__(self, interval: str, command: CronCommand):
+    def __init__(self,
+                 interval: typing.Union[str, CronInterval],
+                 command: CronCommand):
         self._interval = interval
         self._command = command
 
