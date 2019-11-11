@@ -14,5 +14,8 @@ def generate(message, task_id=None, pid=None, stream=None, **kwargs):
         'pid': str(pid),
         'stream': stream
     }
-    entry.update({key: str(value) for key, value in kwargs.items()})
+    entry.update({
+        key: list(value) if isinstance(value, (set, tuple))
+        else value for key, value in kwargs.items()
+    })
     return json.dumps(entry)

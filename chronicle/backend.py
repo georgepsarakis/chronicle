@@ -60,4 +60,3 @@ class RedisBackend:
             self.get_redis_key('operations', 'pause'),
             'interval'
         )
-
