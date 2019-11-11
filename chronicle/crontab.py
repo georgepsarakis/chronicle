@@ -39,9 +39,13 @@ class InvalidConfiguration(Exception):
 class Crontab:
     _jobs = None
 
-    def __init__(self, max_concurrency=None, backend: RedisBackend=None):
+    def __init__(self,
+                 max_concurrency=None,
+                 max_parallel_executions=2,
+                 backend: RedisBackend = None):
         self._backend = backend
         self._max_concurrency = max_concurrency
+        self._max_parallel_executions = max_parallel_executions
         self._start_time = None
         self._pool = TrioPool(concurrency=self._max_concurrency)
         self._is_paused = False
@@ -50,6 +54,10 @@ class Crontab:
     def _termination_handler(self, _signum, _frame):
         trio.run(self._pool.terminate)
         sys.exit(0)
+
+    @property
+    def max_parallel_executions(self) -> int:
+        return self._max_parallel_executions
 
     @property
     def backend(self):
@@ -113,26 +121,61 @@ class Crontab:
                 if scheduler.stopped:
                     scheduler.resume()
 
-            await scheduler.poll()
-            logger.info(
-                log_helper.generate(
-                    message=scheduler.queue.qsize(),
-                    tags=['scheduler', 'queue', 'size']
-                )
-            )
+            async with trio.open_nursery() as executor_pool:
+                max_executions_reached = None
 
-            if scheduler.queue.empty():
-                continue
+                while max_executions_reached is None \
+                        or not max_executions_reached:
 
-            await self._pool.execute(
-                [item[1].command for item in scheduler.flush()],
-                self._get_extra_environment_vars(scheduler.clock.current_time)
-            )
-            await self.check_for_pause()
+                    await scheduler.poll()
+                    logger.info(
+                        log_helper.generate(
+                            message=scheduler.queue.qsize(),
+                            tags=['scheduler', 'queue', 'size']
+                        )
+                    )
+
+                    if scheduler.queue.empty():
+                        continue
+
+                    unique_job_stack = []
+                    unique_commands = set()
+                    for _priority, job in scheduler.flush():
+                        if job.command in unique_commands:
+                            continue
+                        unique_commands.add(job.command)
+                        unique_job_stack.append(job)
+
+                    extra_environment_vars = \
+                        self._get_extra_environment_vars(
+                            scheduler.clock.current_time
+                        )
+
+                    executor_pool.start_soon(
+                        self._pool.execute,
+                        [job.command.clone() for job in unique_job_stack],
+                        extra_environment_vars
+                    )
+
+                    # Add a checkpoint
+                    await trio.sleep(0)
+
+                    max_executions_reached = \
+                        len(executor_pool.child_tasks) == \
+                        self.max_parallel_executions
+
+                    logger.info(
+                        log_helper.generate(
+                            message=len(executor_pool.child_tasks),
+                            tags=['executor', 'pool', 'size']
+                        )
+                    )
+
+                await self.check_for_pause()
 
     @staticmethod
     def _get_extra_environment_vars(current_time):
-        return dict(
-                    CHRONICLE_CRON_TIME=str(current_time),
-                    CHRONICLE_BACKFILL='false'
-                )
+        return {
+            "CHRONICLE_CRON_TIME": str(current_time),
+            "CHRONICLE_BACKFILL": 'false'
+        }

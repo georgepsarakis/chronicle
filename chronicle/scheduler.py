@@ -50,8 +50,9 @@ class Clock:
                     tags=['scheduler', 'clock', 'wait']
                 )
             )
-            wait_time = time_remaining
-            await trio.sleep(wait_time)
+            wait_until = self.now + time_remaining
+            while self.now < wait_until:
+                await trio.sleep(0.01)
         return self.current_time
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
