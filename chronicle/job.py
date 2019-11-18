@@ -208,7 +208,7 @@ class CronCommand:
 
     async def show_progress(self):
         while self.process is None:
-            trio.sleep(0.01)
+            trio.sleep(0.001)
 
         logger.info(
             log_helper.generate(
@@ -242,6 +242,9 @@ class CronCommand:
     def __hash__(self):
         return hash(json.dumps(self.as_tuple()))
 
+    def __eq__(self, other):
+        return self.as_tuple() == other.as_tuple()
+
 
 @total_ordering
 class Job:
@@ -250,6 +253,11 @@ class Job:
                  command: CronCommand):
         self._interval = interval
         self._command = command
+        self._initial_time = None
+
+    def set_initial_time(self, value: int):
+        self._initial_time = value
+        return value
 
     @classmethod
     def from_dict(cls, parameters):
@@ -272,7 +280,7 @@ class Job:
     @property
     def interval(self):
         if not isinstance(self._interval, CronInterval):
-            self._interval = CronInterval(self._interval, None)
+            self._interval = CronInterval(self._interval, self._initial_time)
         return self._interval
 
     @property
@@ -282,7 +290,7 @@ class Job:
     def __hash__(self):
         hash(str(self.command) + str(self.interval))
 
-    def is_pending(self, now: float):
+    def is_pending(self, now: int):
         return self.interval.is_pending(now)
 
     def time_left_for_next_run(self, now):
