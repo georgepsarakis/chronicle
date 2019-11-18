@@ -42,13 +42,19 @@ class Crontab:
     def __init__(self,
                  max_concurrency=None,
                  max_parallel_executions=2,
+                 execution_strategies=None,
                  backend: RedisBackend = None):
         self._backend = backend
         self._max_concurrency = max_concurrency
         self._max_parallel_executions = max_parallel_executions
         self._start_time = None
-        self._pool = TrioPool(concurrency=self._max_concurrency)
+        self._execution_strategies = execution_strategies
+        self._pool = TrioPool(
+            concurrency=self._max_concurrency,
+            execution_strategies=execution_strategies
+        )
         self._is_paused = False
+
         signal.signal(signal.SIGTERM, self._termination_handler)
 
     def _termination_handler(self, _signum, _frame):
@@ -104,15 +110,15 @@ class Crontab:
         if initial_time is None:
             initial_time = self._start_time
 
-        self._set_job_base_time(initial_time)
         trio.run(self._schedule, initial_time)
 
     def _set_job_base_time(self, initial_time):
         for job in self.get_jobs():
-            job.interval.base_time = initial_time
+            job.set_initial_time(initial_time)
 
     async def _schedule(self, initial_time=None):
         scheduler = Scheduler(jobs=self.get_jobs(), initial_time=initial_time)
+        self._set_job_base_time(scheduler.clock.current_time)
 
         while True:
             if self._is_paused:
@@ -138,13 +144,12 @@ class Crontab:
                     if scheduler.queue.empty():
                         continue
 
-                    unique_job_stack = []
-                    unique_commands = set()
+                    commands = []
                     for _priority, job in scheduler.flush():
-                        if job.command in unique_commands:
+                        if job.command in commands:
                             continue
-                        unique_commands.add(job.command)
-                        unique_job_stack.append(job)
+                        commands.append(job.command)
+                        job.interval.schedule_next()
 
                     extra_environment_vars = \
                         self._get_extra_environment_vars(
@@ -153,7 +158,7 @@ class Crontab:
 
                     executor_pool.start_soon(
                         self._pool.execute,
-                        [job.command.clone() for job in unique_job_stack],
+                        [command.clone() for command in commands],
                         extra_environment_vars
                     )
 
