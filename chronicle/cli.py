@@ -6,6 +6,8 @@ import click
 from chronicle.job import Job
 from chronicle.crontab import Crontab
 from chronicle.backend import RedisBackend, StrictRedis
+from chronicle.execution.strategies.duplication import \
+    SkipCommand, RestartCommand
 
 logger = logging.getLogger(__name__)
 
@@ -21,27 +23,34 @@ logging.basicConfig(
 configuration = {
     'jobs': [{
         'interval': '*/2 * * * *',
-        'command': 'for i in 1 2 3 4 5 6 7 8 9 10; do date; sleep 1; done',
+        'command': 'for i in 1 2 3 4 5 6 7 8 9 10; do date; sleep 15; done',
         'bash': True,
-        'environment': 'INHERIT_ALL'
-    }, {
-        'interval': '*/1 * * * *',
-        'command': 'date && env',
-        'bash': True,
-        'environment': 'INHERIT_WHITELISTED_ONLY'
-    }, {
-        'interval': '*/4 * * * *',
-        'command': 'env | grep CHRONICLE',
-        'bash': True,
-        'environment': 'INHERIT_WHITELISTED_ONLY'
-    }, {
-        'interval': '*/9 * * * *',
-        'command': 'ls',
-        'bash': True,
-        'environment': 'INHERIT_WHITELISTED_ONLY'
-    }],
+        'environment': 'INHERIT_ALL',
+        'timeout': None
+    # }, {
+    #     'interval': '*/1 * * * *',
+    #     'command': 'date && env',
+    #     'bash': True,
+    #     'environment': 'INHERIT_WHITELISTED_ONLY'
+    }, #{
+    #     'interval': '* * * * *',
+    #     'command': 'env | grep CHRONICLE',
+    #     'bash': True,
+    #     'environment': 'INHERIT_WHITELISTED_ONLY'
+    # }, # {
+        # 'interval': '*/9 * * * *',
+        # 'command': 'ls',
+        # 'bash': True,
+        # 'environment': 'INHERIT_WHITELISTED_ONLY'
+#    }
+],
     'backend': {
         'url': 'redis://localhost:6379'
+    },
+    'execution': {
+        'strategies': {
+            'duplication': 'skip'
+        }
     }
 }
 
@@ -59,12 +68,35 @@ def _integer_option(_ctx, _param, value):
     return value
 
 
+def _get_nested_configuration(config, *path):
+    c = config
+    for segment in path:
+        c = c.get(segment, {})
+    return c
+
 def _initialize_crontab(conf):
+    strategies = []
+    duplication_strategy = _get_nested_configuration(
+        conf,
+        'execution',
+        'strategies',
+        'duplication'
+    )
+    if duplication_strategy:
+        if duplication_strategy == 'skip':
+            strategies.append(SkipCommand)
+        elif duplication_strategy == 'restart':
+            strategies.append(RestartCommand)
+
+    parameters = {}
     if 'backend' in conf:
-        redis_connection = StrictRedis.from_url(conf['backend'].get('url'))
-        return Crontab(backend=RedisBackend(redis_connection))
-    else:
-        return Crontab()
+        parameters['backend'] = \
+            RedisBackend(StrictRedis.from_url(conf['backend'].get('url')))
+
+    if strategies:
+        parameters['execution_strategies'] = strategies
+
+    return Crontab(**parameters)
 
 
 @click.group()
