@@ -1,5 +1,4 @@
 import os
-import json
 
 
 _MAIN_PROCESS_IDENTIFIER = "COORDINATOR"
@@ -20,4 +19,4 @@ def generate(message, task_id=None, pid=None, stream=None, **kwargs):
             for key, value in kwargs.items()
         }
     )
-    return json.dumps(entry)
+    return entry
