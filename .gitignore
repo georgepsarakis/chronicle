@@ -108,3 +108,6 @@ venv.bak/
 
 # nox
 .nox
+
+# configuration
+config/settings.json
