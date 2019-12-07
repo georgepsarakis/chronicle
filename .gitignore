@@ -105,3 +105,9 @@ venv.bak/
 
 # PyCharm
 .idea
+
+# nox
+.nox
+
+# configuration
+config/settings.json

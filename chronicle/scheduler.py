@@ -46,12 +46,12 @@ class Clock:
         if time_remaining >= 1:
             logger.info(
                 log_helper.generate(
-                    message=time_remaining,
-                    tags=['scheduler', 'clock', 'wait']
+                    message=time_remaining, tags=["scheduler", "clock", "wait"]
                 )
             )
-            wait_time = time_remaining
-            await trio.sleep(wait_time)
+            wait_until = self.now + time_remaining
+            while self.now < wait_until:
+                await trio.sleep(0.01)
         return self.current_time
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -103,10 +103,10 @@ class Scheduler:
             if self._stopped:
                 logger.info(
                     log_helper.generate(
-                        message='paused',
-                        tags=['scheduler', 'queue', 'freeze'],
-                        status='PAUSED',
-                        schedule_time=current_time
+                        message="paused",
+                        tags=["scheduler", "queue", "freeze"],
+                        status="PAUSED",
+                        schedule_time=current_time,
                     )
                 )
                 return
@@ -115,8 +115,8 @@ class Scheduler:
                     logger.info(
                         log_helper.generate(
                             message=job,
-                            tags=['scheduler', 'queue', 'put'],
-                            schedule_time=current_time
+                            tags=["scheduler", "queue", "put"],
+                            schedule_time=current_time,
                         )
                     )
                     self.queue.put((job.priority, job))
@@ -124,16 +124,13 @@ class Scheduler:
                     logger.info(
                         log_helper.generate(
                             message=job,
-                            tags=['scheduler', 'queue', 'put'],
+                            tags=["scheduler", "queue", "put"],
                             schedule_time=current_time,
-                            remaining_time=job.time_left_for_next_run(
-                                self.clock.now
-                            )
+                            remaining_time=job.time_left_for_next_run(self.clock.now),
                         )
                     )
         logger.info(
             log_helper.generate(
-                message=self.queue.qsize(),
-                tags=['scheduler', 'queue', 'size']
+                message=self.queue.qsize(), tags=["scheduler", "queue", "size"]
             )
         )

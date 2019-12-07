@@ -1,0 +1,39 @@
+{
+  "default": {
+    "jobs": [
+      {
+        "interval": "*/2 * * * *",
+        "command": "for i in 1 2 3 4 5 6 7 8 9 10; do date; sleep 15; done",
+        "bash": true,
+        "environment": "INHERIT_ALL",
+        "timeout": null
+      },
+      {
+        "interval": "*/1 * * * *",
+        "command": "date && env",
+        "bash": true,
+        "environment": "INHERIT_WHITELISTED_ONLY"
+      },
+      {
+        "interval": "* * * * *",
+        "command": "env | grep CHRONICLE",
+        "bash": true,
+        "environment": "INHERIT_WHITELISTED_ONLY"
+      },
+      {
+        "interval": "*/9 * * * *",
+        "command": "ls",
+        "bash": true,
+        "environment": "INHERIT_WHITELISTED_ONLY"
+      }
+    ],
+    "backend": {
+      "url": "redis://localhost:6379"
+    },
+    "execution": {
+      "strategies": {
+        "duplication": "duplication:skip"
+      }
+    }
+  }
+}
