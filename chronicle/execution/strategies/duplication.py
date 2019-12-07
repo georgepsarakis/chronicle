@@ -9,15 +9,15 @@ logger = logging.getLogger(__name__)
 class SkipCommand(StrategyBase):
     @classmethod
     def alias(cls):
-        return 'duplication:skip'
+        return "duplication:skip"
 
     def process(self, command):
         if self.already_running(command):
             logger.warning(
                 log_helper.generate(
-                    'skipped',
+                    "skipped",
                     str(command),
-                    tags=['duplicate_command', 'job', 'filtering']
+                    tags=["duplicate_command", "job", "filtering"],
                 )
             )
             return False
@@ -27,7 +27,7 @@ class SkipCommand(StrategyBase):
 class RestartCommand(StrategyBase):
     @classmethod
     def alias(cls):
-        return 'duplication:restart'
+        return "duplication:restart"
 
     def _find_running_instance(self, command):
         for job_instance in self._running_commands:
@@ -40,9 +40,9 @@ class RestartCommand(StrategyBase):
             running_instance.process.terminate()
             logger.warning(
                 log_helper.generate(
-                    'terminated',
+                    "terminated",
                     str(command),
-                    tags=['duplicate_command', 'job', 'filtering']
+                    tags=["duplicate_command", "job", "filtering"],
                 )
             )
         return True

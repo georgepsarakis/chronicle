@@ -1,5 +1,9 @@
-from cron_descriptor import Options, CasingTypeEnum, DescriptionTypeEnum, \
-    ExpressionDescriptor
+from cron_descriptor import (
+    Options,
+    CasingTypeEnum,
+    DescriptionTypeEnum,
+    ExpressionDescriptor,
+)
 from croniter import croniter
 
 import logging
@@ -50,10 +54,9 @@ class CronInterval:
         options.throw_exception_on_parse_error = True
         options.casing_type = CasingTypeEnum.Sentence
         options.use_24hour_time_format = True
-        return ExpressionDescriptor(
-            self.expression,
-            options
-        ).get_description(DescriptionTypeEnum.FULL)
+        return ExpressionDescriptor(self.expression, options).get_description(
+            DescriptionTypeEnum.FULL
+        )
 
     def __repr__(self):
-        return f'{self.__class__.__name__}({self.parse_expression()})'
+        return f"{self.__class__.__name__}({self.parse_expression()})"

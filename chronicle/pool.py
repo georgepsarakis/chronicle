@@ -10,9 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class TrioPool:
-    def __init__(self,
-                 concurrency: Union[int, None],
-                 execution_strategies=None):
+    def __init__(self, concurrency: Union[int, None], execution_strategies=None):
         self._concurrency = concurrency
         self._running_commands = set()
         self._execution_strategies = execution_strategies
@@ -26,9 +24,7 @@ class TrioPool:
             if self._execution_strategies:
                 strategy_instances = []
                 for strategy_class in self._execution_strategies:
-                    strategy_instances.append(
-                        strategy_class(self._running_commands)
-                    )
+                    strategy_instances.append(strategy_class(self._running_commands))
                 self._execution_strategies = strategy_instances
             self._execution_strategies_initialized = True
 
@@ -61,10 +57,7 @@ class TrioPool:
                 try:
                     self.running_commands.remove(command)
                 except KeyError:
-                    log_helper.generate(
-                        self.running_commands,
-                        tags=['pool', 'removal']
-                    )
+                    log_helper.generate(self.running_commands, tags=["pool", "removal"])
 
         return commands
 

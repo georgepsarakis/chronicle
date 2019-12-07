@@ -32,26 +32,26 @@ class InvalidConfiguration(Exception):
         self.suggestion = suggestion
 
     def __str__(self):
-        return f'Invalid value {self.parameter}={self.value}: ' \
-               f'{self.suggestion}'
+        return f"Invalid value {self.parameter}={self.value}: {self.suggestion}"
 
 
 class Crontab:
     _jobs = None
 
-    def __init__(self,
-                 max_concurrency=None,
-                 max_parallel_executions=2,
-                 execution_strategies=None,
-                 backend: RedisBackend = None):
+    def __init__(
+        self,
+        max_concurrency=None,
+        max_parallel_executions=2,
+        execution_strategies=None,
+        backend: RedisBackend = None,
+    ):
         self._backend = backend
         self._max_concurrency = max_concurrency
         self._max_parallel_executions = max_parallel_executions
         self._start_time = None
         self._execution_strategies = execution_strategies
         self._pool = TrioPool(
-            concurrency=self._max_concurrency,
-            execution_strategies=execution_strategies
+            concurrency=self._max_concurrency, execution_strategies=execution_strategies
         )
         self._is_paused = False
 
@@ -74,12 +74,12 @@ class Crontab:
 
     def pause(self, interval: int):
         if not self.backend.enabled:
-            raise BackendDisabled('The Redis backend is not available')
+            raise BackendDisabled("The Redis backend is not available")
         return self.backend.pause(interval=interval)
 
     def resume(self):
         if not self.has_backend():
-            raise BackendDisabled('The Redis backend is not available')
+            raise BackendDisabled("The Redis backend is not available")
         return self.backend.resume()
 
     async def check_for_pause(self):
@@ -130,14 +130,13 @@ class Crontab:
             async with trio.open_nursery() as executor_pool:
                 max_executions_reached = None
 
-                while max_executions_reached is None \
-                        or not max_executions_reached:
+                while max_executions_reached is None or not max_executions_reached:
 
                     await scheduler.poll()
                     logger.info(
                         log_helper.generate(
                             message=scheduler.queue.qsize(),
-                            tags=['scheduler', 'queue', 'size']
+                            tags=["scheduler", "queue", "size"],
                         )
                     )
 
@@ -151,28 +150,27 @@ class Crontab:
                         commands.append(job.command)
                         job.interval.schedule_next()
 
-                    extra_environment_vars = \
-                        self._get_extra_environment_vars(
-                            scheduler.clock.current_time
-                        )
+                    extra_environment_vars = self._get_extra_environment_vars(
+                        scheduler.clock.current_time
+                    )
 
                     executor_pool.start_soon(
                         self._pool.execute,
                         [command.clone() for command in commands],
-                        extra_environment_vars
+                        extra_environment_vars,
                     )
 
                     # Add a checkpoint
                     await trio.sleep(0)
 
-                    max_executions_reached = \
-                        len(executor_pool.child_tasks) == \
-                        self.max_parallel_executions
+                    max_executions_reached = (
+                        len(executor_pool.child_tasks) == self.max_parallel_executions
+                    )
 
                     logger.info(
                         log_helper.generate(
                             message=len(executor_pool.child_tasks),
-                            tags=['executor', 'pool', 'size']
+                            tags=["executor", "pool", "size"],
                         )
                     )
 
@@ -180,7 +178,4 @@ class Crontab:
 
     @staticmethod
     def _get_extra_environment_vars(current_time):
-        return {
-            "CHRONICLE_CRON_TIME": str(current_time),
-            "CHRONICLE_BACKFILL": 'false'
-        }
+        return {"CHRONICLE_CRON_TIME": str(current_time), "CHRONICLE_BACKFILL": "false"}

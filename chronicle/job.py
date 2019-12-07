@@ -47,32 +47,31 @@ class CronCommand:
     ENV_INHERIT_WHITELISTED_ONLY = object()
     ENV_OPTIONS_BY_NAME = ImmutableMapping(
         INHERIT_ALL=ENV_INHERIT_ALL,
-        INHERIT_WHITELISTED_ONLY=ENV_INHERIT_WHITELISTED_ONLY
+        INHERIT_WHITELISTED_ONLY=ENV_INHERIT_WHITELISTED_ONLY,
     )
 
     WHITELISTED_ENVIRONMENT_VARS = (
-        'PATH',
-        'LANG',
-        'HOME',
-        'USER',
-        'LC_NAME',
-        'LC_TIME',
-        'PWD'
+        "PATH",
+        "LANG",
+        "HOME",
+        "USER",
+        "LC_NAME",
+        "LC_TIME",
+        "PWD",
     )
     FLUSH_STREAM_TIMEOUT = 30
 
     def __init__(self, command, **options):
         self._options = options
         self._command = command
-        self._timeout = options.get('timeout', math.inf) or math.inf
-        self._shell = options.get('shell', True)
-        self._use_bash = options.get('bash', False)
+        self._timeout = options.get("timeout", math.inf) or math.inf
+        self._shell = options.get("shell", True)
+        self._use_bash = options.get("bash", False)
 
         if self._use_bash and not self._shell:
-            raise TaskConfigurationError('Invalid shell configuration')
+            raise TaskConfigurationError("Invalid shell configuration")
 
-        self._environment = options.get('environment',
-                                        self.ENV_INHERIT_ALL)
+        self._environment = options.get("environment", self.ENV_INHERIT_ALL)
 
         if not self._shell:
             command = shlex.split(command)
@@ -146,7 +145,7 @@ class CronCommand:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 shell=self._shell,
-                env=environment
+                env=environment,
             )
 
             logger.info(
@@ -155,8 +154,8 @@ class CronCommand:
                     task_id=self.identifier,
                     pid=self.process.pid,
                     stream=None,
-                    tags=['command', 'execution'],
-                    status='PENDING'
+                    tags=["command", "execution"],
+                    status="PENDING",
                 )
             )
             self._started_at = Clock.get_current_timestamp()
@@ -165,11 +164,11 @@ class CronCommand:
         if cancel_scope.cancelled_caught:
             logger.error(
                 log_helper.generate(
-                    f'timeout since {self._started_at}',
+                    f"timeout since {self._started_at}",
                     task_id=self.identifier,
                     pid=self.process.pid,
-                    tags=['command', 'execution'],
-                    status='CANCELLED'
+                    tags=["command", "execution"],
+                    status="CANCELLED",
                 )
             )
 
@@ -185,10 +184,10 @@ class CronCommand:
                 streams_active = True
                 logger.info(
                     log_helper.generate(
-                        stream='STDOUT',
+                        stream="STDOUT",
                         message=stdout.decode(),
                         task_id=self.identifier,
-                        pid=self.process.pid
+                        pid=self.process.pid,
                     )
                 )
 
@@ -197,10 +196,10 @@ class CronCommand:
                 streams_active = True
                 logger.info(
                     log_helper.generate(
-                        stream='STDERR',
+                        stream="STDERR",
                         message=stderr.decode(),
                         task_id=self.identifier,
-                        pid=self.process.pid
+                        pid=self.process.pid,
                     )
                 )
             if not final:
@@ -215,8 +214,8 @@ class CronCommand:
                 message=self._get_executable(),
                 task_id=self._identifier,
                 pid=self.process.pid,
-                tags=['command', 'execution'],
-                status='STARTED'
+                tags=["command", "execution"],
+                status="STARTED",
             )
         )
 
@@ -232,12 +231,12 @@ class CronCommand:
                 task_id=self.identifier,
                 pid=self.process.pid,
                 returncode=self.process.returncode,
-                status='SUCCESS' if successful else 'FAILURE'
+                status="SUCCESS" if successful else "FAILURE",
             )
         )
 
     def __repr__(self):
-        return f'CronCommand({self.command})'
+        return f"CronCommand({self.command})"
 
     def __hash__(self):
         return hash(json.dumps(self.as_tuple()))
@@ -248,9 +247,7 @@ class CronCommand:
 
 @total_ordering
 class Job:
-    def __init__(self,
-                 interval: typing.Union[str, CronInterval],
-                 command: CronCommand):
+    def __init__(self, interval: typing.Union[str, CronInterval], command: CronCommand):
         self._interval = interval
         self._command = command
         self._initial_time = None
@@ -261,15 +258,12 @@ class Job:
 
     @classmethod
     def from_dict(cls, parameters):
-        interval = parameters['interval']
-        parameters['environment'] = \
-            CronCommand.ENV_OPTIONS_BY_NAME[parameters['environment']],
+        interval = parameters["interval"]
+        parameters["environment"] = (
+            CronCommand.ENV_OPTIONS_BY_NAME[parameters["environment"]],
+        )
         command = CronCommand(
-            **{
-                key: value
-                for key, value in parameters.items()
-                if key != 'interval'
-            }
+            **{key: value for key, value in parameters.items() if key != "interval"}
         )
         return cls(interval=interval, command=command)
 
@@ -303,4 +297,4 @@ class Job:
         return self.interval.next_run_at == other.interval.next_run_at
 
     def __repr__(self):
-        return f'{self.command} at {self.interval}'
+        return f"{self.command} at {self.interval}"

@@ -19,13 +19,12 @@ class Application:
 
     def _get_duplication_strategy(self):
         selected_strategy = jmespath.search(
-            'execution.strategies.duplication',
-            self._configuration
+            "execution.strategies.duplication", self._configuration
         )
         return find_strategy_by_alias(selected_strategy)
 
     def _get_backend_url(self):
-        return jmespath.search('backend.url', self._configuration)
+        return jmespath.search("backend.url", self._configuration)
 
     @staticmethod
     def _get_jobs():
@@ -35,10 +34,7 @@ class Application:
         if self._is_configured:
             raise AlreadyConfigured
 
-        Crontab.setup([
-            Job.from_dict(parameters)
-            for parameters in self._get_jobs()
-        ])
+        Crontab.setup([Job.from_dict(parameters) for parameters in self._get_jobs()])
 
         self._is_configured = True
         backend_url = self._get_backend_url()
@@ -47,8 +43,8 @@ class Application:
         else:
             backend = None
         return {
-            'execution_strategies': [self._get_duplication_strategy()],
-            'backend': backend
+            "execution_strategies": [self._get_duplication_strategy()],
+            "backend": backend,
         }
 
     def create(self):
