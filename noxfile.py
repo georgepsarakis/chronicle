@@ -45,4 +45,4 @@ def check(session):
 @nox.session(python=['3', "3.6", "3.7", "3.8"])
 def test(session):
     install_dependencies(session)
-    session.run("python", "-m", "pytest", "-v", "tests")
+    session.run("python", "-m", "pytest", "-v", "--cov=chronicle", "tests")

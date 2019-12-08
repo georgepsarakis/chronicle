@@ -3,10 +3,9 @@ import logging
 
 import click
 from dynaconf import settings
+from pythonjsonlogger import jsonlogger
 
 from chronicle.application import Application
-
-logger = logging.getLogger(__name__)
 
 logging.basicConfig(
     stream=sys.stdout,
@@ -15,6 +14,14 @@ logging.basicConfig(
     "[%(name)s.%(funcName)s:%(lineno)d] "
     "%(message)s",
     datefmt="%Y-%m-%dT%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
+logger.parent.handlers[0].setFormatter(
+    jsonlogger.JsonFormatter(
+        "%(asctime) %(process) %(levelname) "
+        "%(name) %(module) %(funcName) %(lineno) %(message)"
+    )
 )
 
 
