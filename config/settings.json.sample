@@ -30,10 +30,14 @@
     "backend": {
       "url": "redis://localhost:6379"
     },
+    "scheduler": {
+      "start_time": null
+    },
     "execution": {
-      "strategies": {
-        "duplication": "duplication:skip"
-      }
+      "strategies": [{
+        "scope": "duplication",
+        "name": "skip"
+      }]
     }
   }
 }
