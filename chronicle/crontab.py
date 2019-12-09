@@ -106,6 +106,9 @@ class Crontab:
         if self._start_time is not None:
             raise AlreadyStarted
 
+        if initial_time == 0:
+            raise InvalidConfiguration('Initial time cannot be zero')
+
         self._start_time = Clock.get_current_timestamp()
         if initial_time is None:
             initial_time = self._start_time
@@ -115,6 +118,7 @@ class Crontab:
     def _set_job_base_time(self, initial_time):
         for job in self.get_jobs():
             job.set_initial_time(initial_time)
+            job.interval.schedule_next()
 
     async def _schedule(self, initial_time=None):
         scheduler = Scheduler(jobs=self.get_jobs(), initial_time=initial_time)

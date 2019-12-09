@@ -39,6 +39,8 @@ def cli():
     "scheduling and executing tasks.",
 )
 def start(backfill_since):
+    if backfill_since == 0:
+        backfill_since = None
     crontab = Application(settings).create().crontab
     crontab.start(backfill_since)
 

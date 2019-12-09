@@ -17,11 +17,19 @@ class Application:
         self._is_configured = False
         self._crontab = None
 
+    @property
+    def crontab(self) -> Crontab:
+        return self._crontab
+
+    def create(self):
+        self._crontab = Crontab(**self._configure())
+        return self
+
     def _get_duplication_strategy(self):
         selected_strategy = jmespath.search(
             "execution.strategies.duplication", self._configuration
         )
-        return find_strategy_by_alias(selected_strategy)
+        return find_strategy_by_alias(f"duplication:{selected_strategy}")
 
     def _get_backend_url(self):
         return jmespath.search("backend.url", self._configuration)
@@ -46,11 +54,3 @@ class Application:
             "execution_strategies": [self._get_duplication_strategy()],
             "backend": backend,
         }
-
-    def create(self):
-        self._crontab = Crontab(**self._configure())
-        return self
-
-    @property
-    def crontab(self) -> Crontab:
-        return self._crontab
