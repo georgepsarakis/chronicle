@@ -1,6 +1,7 @@
 import logging
 import signal
 import sys
+from uuid import uuid4
 
 import trio
 
@@ -107,7 +108,7 @@ class Crontab:
             raise AlreadyStarted
 
         if initial_time == 0:
-            raise InvalidConfiguration('Initial time cannot be zero')
+            raise InvalidConfiguration("Initial time cannot be zero")
 
         self._start_time = Clock.get_current_timestamp()
         if initial_time is None:
@@ -115,71 +116,88 @@ class Crontab:
 
         trio.run(self._schedule, initial_time)
 
-    def _set_job_base_time(self, initial_time):
-        for job in self.get_jobs():
-            job.set_initial_time(initial_time)
+    async def _poll(self, scheduler):
+        queued_jobs_count = await scheduler.poll()
+        logger.info(
+            log_helper.generate(
+                message=queued_jobs_count, tags=["scheduler", "queue", "size"]
+            )
+        )
+        return not scheduler.queue.empty()
+
+    async def _execute_commands(self, scheduler, nursery):
+        execution_cycle_id = str(uuid4())
+        extra_environment_vars = self._get_extra_environment_vars(
+            scheduler.clock.current_time, execution_cycle_id
+        )
+
+        commands = []
+        for _priority, job in scheduler.flush():
             job.interval.schedule_next()
+            if job.command in commands:
+                continue
+            commands.append(job.command)
+
+        if not commands:
+            return
+
+        nursery.start_soon(
+            self._pool.execute,
+            [command.clone() for command in commands],
+            extra_environment_vars,
+        )
+
+        # Add a checkpoint
+        await trio.sleep(0)
 
     async def _schedule(self, initial_time=None):
         scheduler = Scheduler(jobs=self.get_jobs(), initial_time=initial_time)
         self._set_job_base_time(scheduler.clock.current_time)
 
         while True:
-            if self._is_paused:
-                scheduler.stop()
-            else:
-                if scheduler.stopped:
-                    scheduler.resume()
-
             async with trio.open_nursery() as executor_pool:
-                max_executions_reached = None
+                while True:
+                    await self.check_for_pause()
+                    self._handle_pause(scheduler)
 
-                while max_executions_reached is None or not max_executions_reached:
-
-                    await scheduler.poll()
-                    logger.info(
-                        log_helper.generate(
-                            message=scheduler.queue.qsize(),
-                            tags=["scheduler", "queue", "size"],
-                        )
-                    )
-
-                    if scheduler.queue.empty():
+                    if not await self._poll(scheduler):
                         continue
 
-                    commands = []
-                    for _priority, job in scheduler.flush():
-                        if job.command in commands:
-                            continue
-                        commands.append(job.command)
-                        job.interval.schedule_next()
+                    await self._execute_commands(scheduler, nursery=executor_pool)
 
-                    extra_environment_vars = self._get_extra_environment_vars(
-                        scheduler.clock.current_time
-                    )
+                    if self._check_max_parallel_executions(executor_pool):
+                        break
 
-                    executor_pool.start_soon(
-                        self._pool.execute,
-                        [command.clone() for command in commands],
-                        extra_environment_vars,
-                    )
+    def _check_max_parallel_executions(self, nursery):
+        max_parallel_executions_reached = (
+            len(nursery.child_tasks) == self.max_parallel_executions
+        )
+        logger.info(
+            log_helper.generate(
+                message=len(nursery.child_tasks),
+                tags=["executor", "pool", "size"],
+                max_parallel_executions=self.max_parallel_executions,
+                max_parallel_executions_reached=max_parallel_executions_reached,
+            )
+        )
+        return max_parallel_executions_reached
 
-                    # Add a checkpoint
-                    await trio.sleep(0)
+    def _set_job_base_time(self, initial_time):
+        for job in self.get_jobs():
+            job.set_initial_time(initial_time)
 
-                    max_executions_reached = (
-                        len(executor_pool.child_tasks) == self.max_parallel_executions
-                    )
-
-                    logger.info(
-                        log_helper.generate(
-                            message=len(executor_pool.child_tasks),
-                            tags=["executor", "pool", "size"],
-                        )
-                    )
-
-                await self.check_for_pause()
+    def _handle_pause(self, scheduler):
+        if self._is_paused:
+            scheduler.stop()
+        else:
+            if scheduler.stopped:
+                scheduler.resume()
 
     @staticmethod
-    def _get_extra_environment_vars(current_time):
-        return {"CHRONICLE_CRON_TIME": str(current_time), "CHRONICLE_BACKFILL": "false"}
+    def _get_extra_environment_vars(current_time, execution_cycle_id):
+        return {
+            "CHRONICLE_CRON_TIME": str(current_time),
+            "CHRONICLE_BACKFILL": "false",
+            "CHRONICLE_EXECUTION_CYCLE_ID": execution_cycle_id,
+            "CHRONICLE_TASK_ID": lambda command: command.identifier,
+        }

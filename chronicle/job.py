@@ -130,14 +130,23 @@ class CronCommand:
         return self.command
 
     async def run(self, additional_environment=None):
+        additional_environment = additional_environment or {}
         environment = os.environ.copy()
+
         if self.environment is self.ENV_INHERIT_WHITELISTED_ONLY:
             environment = {
                 variable: value
                 for variable, value in environment.items()
                 if variable in self.WHITELISTED_ENVIRONMENT_VARS
             }
-        environment.update(additional_environment or {})
+
+        for name in additional_environment.keys():
+            value = additional_environment[name]
+            if callable(value):
+                value = value(self)
+            additional_environment[name] = value
+
+        environment.update(additional_environment)
 
         with trio.move_on_after(self.timeout) as cancel_scope:
             self._process = await trio.open_process(
@@ -254,10 +263,16 @@ class Job:
 
     def set_initial_time(self, value: int):
         self._initial_time = value
+        self.interval.schedule_next()
         return value
+
+    @property
+    def identifier(self):
+        return self.__hash__()
 
     @classmethod
     def from_dict(cls, parameters):
+        parameters = parameters.copy()
         interval = parameters["interval"]
         parameters["environment"] = (
             CronCommand.ENV_OPTIONS_BY_NAME[parameters["environment"]],

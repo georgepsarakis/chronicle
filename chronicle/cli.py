@@ -9,7 +9,7 @@ from chronicle.application import Application
 
 logging.basicConfig(
     stream=sys.stdout,
-    level=logging.INFO,
+    level=settings.get("logger", {}).get("level") or logging.DEBUG,
     format="[%(asctime)s] [%(process)d] %(levelname)s "
     "[%(name)s.%(funcName)s:%(lineno)d] "
     "%(message)s",
@@ -39,6 +39,7 @@ def cli():
     "scheduling and executing tasks.",
 )
 def start(backfill_since):
+    logger.debug(f"Starting with settings: {settings.as_dict()}")
     if backfill_since == 0:
         backfill_since = None
     crontab = Application(settings).create().crontab

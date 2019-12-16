@@ -22,12 +22,15 @@ class Application:
         return self._crontab
 
     def create(self):
-        self._crontab = Crontab(**self._configure())
+        configuration = self._configure()
+        logger.info(f"Creating crontab with configuration: {configuration}")
+        self._crontab = Crontab(**configuration)
         return self
 
     def _get_duplication_strategy(self):
         selected_strategy = jmespath.search(
-            "execution.strategies.duplication", self._configuration
+            "execution.strategies[?scope==`duplication`] | [0].name",
+            self._configuration,
         )
         return find_strategy_by_alias(f"duplication:{selected_strategy}")
 
@@ -42,7 +45,12 @@ class Application:
         if self._is_configured:
             raise AlreadyConfigured
 
-        Crontab.setup([Job.from_dict(parameters) for parameters in self._get_jobs()])
+        cron_jobs = []
+        for parameters in self._get_jobs():
+            cron_job = Job.from_dict(parameters)
+            logger.info(parameters)
+            cron_jobs.append(cron_job)
+        Crontab.setup(cron_jobs)
 
         self._is_configured = True
         backend_url = self._get_backend_url()

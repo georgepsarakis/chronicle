@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class Clock:
-    _MINUTE_IN_SECONDS = 60
+    _TICK_INTERVAL_SECONDS = 60
 
     def __init__(self, initial_time: float):
         self._initial_time = self._normalize_time(initial_time)
@@ -34,11 +34,11 @@ class Clock:
 
     def _normalize_time(self, timestamp) -> int:
         timestamp = int(timestamp)
-        seconds = timestamp % self._MINUTE_IN_SECONDS
-        return timestamp - seconds + self._MINUTE_IN_SECONDS
+        seconds = timestamp % self._TICK_INTERVAL_SECONDS
+        return timestamp - seconds + self._TICK_INTERVAL_SECONDS
 
     def tick(self):
-        self._current_time += self._MINUTE_IN_SECONDS
+        self._current_time += self._TICK_INTERVAL_SECONDS
         return self._current_time
 
     async def __aenter__(self):
@@ -111,26 +111,21 @@ class Scheduler:
                 )
                 return
             for job in self._jobs:
+                logger.info(
+                    log_helper.generate(
+                        task_id=job.identifier,
+                        tags=["scheduler", "queue", "check"],
+                        schedule_time=current_time,
+                        remaining_time=job.time_left_for_next_run(self.clock.now),
+                    )
+                )
                 if job.is_pending(current_time):
                     logger.info(
                         log_helper.generate(
-                            message=job,
+                            task_id=job.identifier,
                             tags=["scheduler", "queue", "put"],
                             schedule_time=current_time,
                         )
                     )
                     self.queue.put((job.priority, job))
-                else:
-                    logger.info(
-                        log_helper.generate(
-                            message=job,
-                            tags=["scheduler", "queue", "put"],
-                            schedule_time=current_time,
-                            remaining_time=job.time_left_for_next_run(self.clock.now),
-                        )
-                    )
-        logger.info(
-            log_helper.generate(
-                message=self.queue.qsize(), tags=["scheduler", "queue", "size"]
-            )
-        )
+        return self.queue.qsize()
