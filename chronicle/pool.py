@@ -9,57 +9,94 @@ import chronicle.logger as log_helper
 logger = logging.getLogger(__name__)
 
 
+class StrategyHandler:
+    def __init__(self, selected_strategies, process_list):
+        self._selected_strategies = selected_strategies or []
+        self._prepared_strategies = []
+        self._process_list = process_list
+
+    @property
+    def strategies(self):
+        if not self._prepared_strategies:
+            self._prepared_strategies = [
+                strategy_class(self._process_list)
+                for strategy_class in self._selected_strategies
+            ]
+        return self._prepared_strategies
+
+    def apply(self, command):
+        for strategy in self.strategies:
+            if not strategy(command):
+                return False
+        return True
+
+
+class ProcessList:
+    def __init__(self):
+        self._running_commands = set()
+
+    @property
+    def commands(self):
+        return self._running_commands.copy()
+
+    def update(self, commands):
+        self._running_commands.update(commands)
+
+    def add(self, command):
+        self._running_commands.add(command)
+
+    def remove(self, command):
+        self._running_commands.remove(command)
+
+    def contains(self, command):
+        return command in self._running_commands
+
+
 class TrioPool:
     def __init__(self, concurrency: Union[int, None], execution_strategies=None):
         self._concurrency = concurrency
-        self._running_commands = set()
+        self._process_list = ProcessList()
         self._execution_strategies = execution_strategies
-        self._execution_strategies_initialized = False
+        self._strategy_handler = None
 
     @property
-    def execution_strategies(self):
-        if self._execution_strategies_initialized:
-            return self._execution_strategies
-        else:
-            if self._execution_strategies:
-                strategy_instances = []
-                for strategy_class in self._execution_strategies:
-                    strategy_instances.append(strategy_class(self._running_commands))
-                self._execution_strategies = strategy_instances
-            self._execution_strategies_initialized = True
-
-        return self._execution_strategies
+    def strategy_handler(self):
+        if self._strategy_handler is None:
+            self._strategy_handler = StrategyHandler(
+                self._execution_strategies, self.processlist
+            )
+        return self._strategy_handler
 
     @property
-    def running_commands(self) -> set:
-        return self._running_commands
+    def strategies(self):
+        return self.strategy_handler.strategies
 
-    def _apply_strategies(self, batch):
-        if not self.execution_strategies:
-            return batch
-
-        final_batch = []
-        for job in batch:
-            if all(strategy(job) for strategy in self.execution_strategies):
-                final_batch.append(job)
-        return final_batch
+    @property
+    def processlist(self) -> ProcessList:
+        return self._process_list
 
     async def execute(self, commands, *args):
-        concurrency = self._concurrency or len(commands)
+        for batch in self._generate_batches(commands):
+            accepted_commands = set(filter(self.strategy_handler.apply, batch))
+            self.processlist.update(accepted_commands)
 
-        for batch in iterutils.chunked(commands, concurrency):
             async with trio.open_nursery() as nursery:
-                for command in self._apply_strategies(batch):
-                    nursery.start_soon(command.run, args)
-                    self.running_commands.add(command)
+                for command in accepted_commands:
+                    nursery.start_soon(command.run, *args)
 
-            for command in batch:
-                try:
-                    self.running_commands.remove(command)
-                except KeyError:
-                    log_helper.generate(self.running_commands, tags=["pool", "removal"])
-
+            await self._mark_as_completed(accepted_commands)
         return commands
 
     async def terminate(self):
-        return [job.process.terminate() for job in self._running_commands]
+        return [job.process.terminate() for job in self.processlist.commands]
+
+    def _generate_batches(self, commands):
+        concurrency = self._concurrency or len(commands)
+        yield from iterutils.chunked(commands, concurrency)
+
+    async def _mark_as_completed(self, commands):
+        for command in commands:
+            try:
+                self.processlist.remove(command)
+            except KeyError:
+                log_helper.generate(self.processlist.commands, tags=["pool", "removal"])

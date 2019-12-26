@@ -43,7 +43,7 @@ class CronInterval:
 
     @property
     def next_run_at(self):
-        return self._next_run_at or self.schedule_next()
+        return self._next_run_at
 
     def schedule_next(self):
         self._next_run_at = self.iterator.get_next()

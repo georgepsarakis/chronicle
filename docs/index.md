@@ -1,5 +1,17 @@
 ## Motivation
 
+Chronicle is a job scheduler, designed for 12-factor apps and with operational ease in mind.
+
+Although there are several tools for scheduling and supervising complex workflows, such as Airflow, Luigi and Celery,
+Chronicle aims for solving the common issues of executing scheduled tasks.
+
+When scheduling a task to run, one may want to define a timeout and get notified if the job exceeds it.
+In addition, you may want to skip overlapping instances of the same task, or cancel the previously running one.
+With regard to resources, you may want to limit concurrency, depending on the task workload (I/O bound or CPU bound).
+In case of maintenance operations, you may want to pause execution, let already running tasks to complete and resume execution later,
+running all pending tasks.
+
+
 !!! warning
     This project is currently considered as "alpha" release.
 
