@@ -1,4 +1,5 @@
 import logging
+import signal
 
 import jmespath
 from dynaconf import settings
@@ -17,6 +18,11 @@ class Application:
         self._configuration = configuration
         self._is_configured = False
         self._crontab = None
+
+        signal.signal(signal.SIGTERM, self._termination_handler)
+
+    def _termination_handler(self, *_):
+        self.crontab.stop(warm=True)
 
     @property
     def crontab(self) -> Crontab:

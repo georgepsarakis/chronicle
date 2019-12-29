@@ -1,6 +1,6 @@
 import logging
-import signal
 import sys
+import time
 from uuid import uuid4
 
 import trio
@@ -25,6 +25,7 @@ class BackendDisabled(Exception):
     pass
 
 
+# TODO: deprecate in favor of (or move to) marshmallow schema validation
 class InvalidConfiguration(Exception):
     def __init__(self, parameter, value, suggestion):
         super(InvalidConfiguration, self).__init__()
@@ -34,6 +35,20 @@ class InvalidConfiguration(Exception):
 
     def __str__(self):
         return f"Invalid value {self.parameter}={self.value}: {self.suggestion}"
+
+
+class PollingLoop:
+    def __init__(self, interval, status_reporter, conditional):
+        self._interval = interval
+        self._status_reporter = status_reporter
+        self._conditional = conditional
+
+    def __enter__(self):
+        elapsed_time = 0
+        while not self._conditional(elapsed_time):
+            time.sleep(self._interval)
+            elapsed_time += self._interval
+            self._status_reporter(elapsed_time)
 
 
 class Crontab:
@@ -55,12 +70,52 @@ class Crontab:
             concurrency=self._max_concurrency, execution_strategies=execution_strategies
         )
         self._is_paused = False
+        self._is_stopped = False
+        self._is_stopping = False
 
-        signal.signal(signal.SIGTERM, self._termination_handler)
+    @property
+    def is_stopped(self) -> bool:
+        return self._is_stopped
 
-    def _termination_handler(self, _signum, _frame):
-        trio.run(self._pool.terminate)
-        sys.exit(0)
+    def stop(self, warm=False):
+        self._is_stopping = True
+        if not warm:
+            logger.info(
+                log_helper.generate(
+                    message="Terminating all active subprocesses in pool",
+                    shutdown="cold"
+                )
+            )
+            trio.run(self._pool.terminate)
+            logger.info(
+                log_helper.generate(
+                    message="Running processes terminated",
+                    shutdown="cold"
+                )
+            )
+        else:
+            waiter = PollingLoop(
+                interval=1,
+                status_reporter=
+                lambda elapsed_time:
+                logger.info(
+                    log_helper.generate(
+                        message=
+                        f"Waiting for all active subprocesses in pool to complete",
+                        elapsed_time=elapsed_time,
+                        shutdown="warm"
+                    )
+                )
+            )
+            with waiter:
+                pass
+            logger.info(
+                log_helper.generate(
+                    message="All subprocesses completed",
+                    shutdown="warm"
+                )
+            )
+        self._is_stopped = True
 
     @property
     def max_parallel_executions(self) -> int:
@@ -170,10 +225,11 @@ class Crontab:
 
                     await self._execute_commands(scheduler, nursery=executor_pool)
 
-                    if self._check_max_parallel_executions(executor_pool):
+                    if self._check_max_parallel_executions(executor_pool) \
+                            or self._is_stopping:
                         break
 
-            if single_cycle:
+            if single_cycle or self._is_stopping:
                 logger.info(
                     log_helper.generate(message='Single cycle selected - exiting')
                 )
