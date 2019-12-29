@@ -41,12 +41,19 @@ def cli():
     help="Use this timestamp as a starting point for "
     "scheduling and executing tasks.",
 )
-def start(backfill_since):
+@click.option(
+    "--run-once",
+    default=False,
+    is_flag=True,
+    show_default=True,
+    help="Execute only one cycle and exit.",
+)
+def start(backfill_since, run_once):
     logger.debug(f"Starting with settings: {settings.as_dict()}")
     if backfill_since == 0:
         backfill_since = None
     crontab = Application(settings).create().crontab
-    crontab.start(backfill_since)
+    crontab.start(backfill_since, single_cycle=run_once)
 
 
 @cli.command()

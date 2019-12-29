@@ -103,7 +103,7 @@ class Crontab:
     def start_time(self):
         return self._start_time
 
-    def start(self, initial_time=None):
+    def start(self, initial_time=None, single_cycle=False):
         if self._start_time is not None:
             raise AlreadyStarted
 
@@ -114,7 +114,7 @@ class Crontab:
         if initial_time is None:
             initial_time = self._start_time
 
-        trio.run(self._schedule, initial_time)
+        trio.run(self._schedule, initial_time, single_cycle)
 
     async def _poll(self, scheduler):
         queued_jobs_count = await scheduler.poll()
@@ -131,12 +131,7 @@ class Crontab:
             scheduler.clock.current_time, execution_cycle_id
         )
 
-        commands = []
-        for _priority, job in scheduler.flush():
-            job.interval.schedule_next()
-            if job.command in commands:
-                continue
-            commands.append(job.command)
+        commands = self._get_pending_commands(scheduler)
 
         if not commands:
             return
@@ -150,7 +145,17 @@ class Crontab:
         # Add a checkpoint
         await trio.sleep(0)
 
-    async def _schedule(self, initial_time=None):
+    @staticmethod
+    def _get_pending_commands(scheduler):
+        commands = []
+        for _priority, job in scheduler.flush():
+            job.interval.schedule_next()
+            if job.command in commands:
+                continue
+            commands.append(job.command)
+        return commands
+
+    async def _schedule(self, initial_time, single_cycle):
         scheduler = Scheduler(jobs=self.get_jobs(), initial_time=initial_time)
         self._set_job_base_time(scheduler.clock.current_time)
 
@@ -167,6 +172,12 @@ class Crontab:
 
                     if self._check_max_parallel_executions(executor_pool):
                         break
+
+            if single_cycle:
+                logger.info(
+                    log_helper.generate(message='Single cycle selected - exiting')
+                )
+                break
 
     def _check_max_parallel_executions(self, nursery):
         max_parallel_executions_reached = (
