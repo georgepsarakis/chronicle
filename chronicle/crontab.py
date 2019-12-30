@@ -1,8 +1,10 @@
+from functools import wraps
 import logging
-import sys
 import time
 from uuid import uuid4
 
+from transitions import Machine
+from marshmallow import Schema, fields, validate
 import trio
 
 from chronicle.scheduler import Scheduler, Clock
@@ -51,34 +53,66 @@ class PollingLoop:
             self._status_reporter(elapsed_time)
 
 
+class CrontabOptions(Schema):
+    dry_run = fields.Bool(default=False, missing=False)
+    max_concurrency = fields.Integer(
+        validate=validate.Range(min=1),
+        allow_none=True,
+        default=None,
+        missing=None
+    )
+    max_parallel_executions = fields.Integer(
+        validate=validate.Range(min=2),
+        default=2,
+        missing=2
+    )
+
+
 class Crontab:
     _jobs = None
 
     def __init__(
         self,
-        max_concurrency=None,
-        max_parallel_executions=2,
         execution_strategies=None,
         backend: RedisBackend = None,
+        **options
     ):
         self._backend = backend
-        self._max_concurrency = max_concurrency
-        self._max_parallel_executions = max_parallel_executions
         self._start_time = None
         self._execution_strategies = execution_strategies
-        self._pool = TrioPool(
-            concurrency=self._max_concurrency, execution_strategies=execution_strategies
-        )
-        self._is_paused = False
-        self._is_stopped = False
-        self._is_stopping = False
+        self._options = CrontabOptions().load(options or {})
+        self._pool = None
+        self._state = CrontabState(self)
+        self._scheduler = None
+
+    class Decorators:
+        def requires_backend(fn):
+            @wraps(fn)
+            def wrapper(self, *args, **kwargs):
+                if self.has_backend():
+                    return fn(self, *args, **kwargs)
+                raise BackendDisabled("The Redis backend is not available")
+            return wrapper
 
     @property
-    def is_stopped(self) -> bool:
-        return self._is_stopped
+    def run_state(self):
+        return self._state
+
+    @property
+    def scheduler(self) -> Scheduler:
+        return self._scheduler
+
+    @property
+    def pool(self):
+        if self._pool is None:
+            self._pool = TrioPool(
+                concurrency=self._options["max_concurrency"],
+                execution_strategies=self._execution_strategies
+            )
+        return self._pool
 
     def stop(self, warm=False):
-        self._is_stopping = True
+        self.change_state_to_stopping()
         if not warm:
             logger.info(
                 log_helper.generate(
@@ -115,11 +149,11 @@ class Crontab:
                     shutdown="warm"
                 )
             )
-        self._is_stopped = True
+        self.change_state_to_stopped()
 
     @property
     def max_parallel_executions(self) -> int:
-        return self._max_parallel_executions
+        return self._options["max_parallel_executions"]
 
     @property
     def backend(self):
@@ -128,22 +162,22 @@ class Crontab:
     def has_backend(self):
         return self.backend and self.backend.enabled
 
+    @Decorators.requires_backend
     def pause(self, interval: int):
-        if not self.backend.enabled:
-            raise BackendDisabled("The Redis backend is not available")
         return self.backend.pause(interval=interval)
 
+    @Decorators.requires_backend
     def resume(self):
-        if not self.has_backend():
-            raise BackendDisabled("The Redis backend is not available")
         return self.backend.resume()
 
     async def check_for_pause(self):
         if not self.has_backend():
             return False
-        self._is_paused = await self.backend.is_paused()
-        return self._is_paused
+        if await self.backend.is_paused():
+            self.change_state_to_paused()
+        return self.run_state.machine.is_paused()
 
+    # TODO: provide a better way to configure jobs
     @classmethod
     def setup(cls, jobs):
         if cls.get_jobs():
@@ -171,28 +205,28 @@ class Crontab:
 
         trio.run(self._schedule, initial_time, single_cycle)
 
-    async def _poll(self, scheduler):
-        queued_jobs_count = await scheduler.poll()
+    async def _poll(self):
+        queued_jobs_count = await self.scheduler.poll()
         logger.info(
             log_helper.generate(
                 message=queued_jobs_count, tags=["scheduler", "queue", "size"]
             )
         )
-        return not scheduler.queue.empty()
+        return not self.scheduler.queue.empty()
 
-    async def _execute_commands(self, scheduler, nursery):
+    async def _execute_commands(self, nursery):
         execution_cycle_id = str(uuid4())
         extra_environment_vars = self._get_extra_environment_vars(
-            scheduler.clock.current_time, execution_cycle_id
+            self.scheduler.clock.current_time, execution_cycle_id
         )
 
-        commands = self._get_pending_commands(scheduler)
+        commands = self._get_pending_commands()
 
         if not commands:
             return
 
         nursery.start_soon(
-            self._pool.execute,
+            self.pool.execute,
             [command.clone() for command in commands],
             extra_environment_vars,
         )
@@ -200,10 +234,9 @@ class Crontab:
         # Add a checkpoint
         await trio.sleep(0)
 
-    @staticmethod
-    def _get_pending_commands(scheduler):
+    def _get_pending_commands(self):
         commands = []
-        for _priority, job in scheduler.flush():
+        for _priority, job in self.scheduler.flush():
             job.interval.schedule_next()
             if job.command in commands:
                 continue
@@ -211,31 +244,31 @@ class Crontab:
         return commands
 
     async def _schedule(self, initial_time, single_cycle):
-        scheduler = Scheduler(jobs=self.get_jobs(), initial_time=initial_time)
-        self._set_job_base_time(scheduler.clock.current_time)
+        self._scheduler = Scheduler(jobs=self.get_jobs(), initial_time=initial_time)
+        self._set_job_base_time()
 
         while True:
             async with trio.open_nursery() as executor_pool:
                 while True:
                     await self.check_for_pause()
-                    self._handle_pause(scheduler)
+                    self._handle_pause()
 
-                    if not await self._poll(scheduler):
+                    if not await self._poll():
                         continue
 
-                    await self._execute_commands(scheduler, nursery=executor_pool)
+                    await self._execute_commands(executor_pool)
 
-                    if self._check_max_parallel_executions(executor_pool) \
-                            or self._is_stopping:
+                    if self._check_parallel_executions_count(executor_pool) \
+                            or self.is_stopping():
                         break
 
-            if single_cycle or self._is_stopping:
+            if single_cycle or self.is_stopping():
                 logger.info(
                     log_helper.generate(message='Single cycle selected - exiting')
                 )
                 break
 
-    def _check_max_parallel_executions(self, nursery):
+    def _check_parallel_executions_count(self, nursery):
         max_parallel_executions_reached = (
             len(nursery.child_tasks) == self.max_parallel_executions
         )
@@ -249,16 +282,17 @@ class Crontab:
         )
         return max_parallel_executions_reached
 
-    def _set_job_base_time(self, initial_time):
+    def _set_job_base_time(self):
+        initial_time = self.scheduler.clock.current_time
         for job in self.get_jobs():
             job.set_initial_time(initial_time)
 
-    def _handle_pause(self, scheduler):
-        if self._is_paused:
-            scheduler.stop()
+    def _handle_pause(self):
+        if self.is_paused():
+            self.scheduler.stop()
         else:
-            if scheduler.stopped:
-                scheduler.resume()
+            if self.scheduler.stopped:
+                self.scheduler.resume()
 
     @staticmethod
     def _get_extra_environment_vars(current_time, execution_cycle_id):
@@ -268,3 +302,42 @@ class Crontab:
             "CHRONICLE_EXECUTION_CYCLE_ID": execution_cycle_id,
             "CHRONICLE_TASK_ID": lambda command: command.identifier,
         }
+
+
+class CrontabState:
+    _states = (
+        'initialized',
+        'starting', 'started',
+        'stopping', 'stopped',
+        'paused', 'resuming',
+    )
+
+    def __init__(self, crontab: Crontab):
+        self._state_machine = Machine(crontab,
+                                      states=self._states,
+                                      initial="initialized")
+        self._state_machine.add_transition(
+            "change_state_to_starting",
+            "initialized",
+            "starting"
+        )
+        self._state_machine.add_transition(
+            "change_state_to_paused",
+            "started",
+            "paused"
+        )
+        self._state_machine.on_enter_paused('_handle_pause')
+        self._state_machine.add_transition(
+            "change_state_to_stopping",
+            "started",
+            "stopping"
+        )
+        self._state_machine.add_transition(
+            "change_state_to_stopping",
+            "paused",
+            "stopping"
+        )
+
+    @property
+    def machine(self) -> Machine:
+        return self._state_machine

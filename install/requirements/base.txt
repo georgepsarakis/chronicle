@@ -18,3 +18,4 @@ trio==0.12.1
 dynaconf==2.2.0
 jmespath==0.9.4
 marshmallow==3.3.0
+transitions==0.7.1
