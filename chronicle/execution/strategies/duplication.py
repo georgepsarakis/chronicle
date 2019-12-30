@@ -6,15 +6,15 @@ logger = logging.getLogger(__name__)
 
 
 class StrategyBase:
-    def __init__(self, running_commands):
-        self._running_commands = running_commands
+    def __init__(self, process_list):
+        self._process_list = process_list
 
     @classmethod
     def alias(cls):
         raise NotImplementedError
 
     def already_running(self, command) -> bool:
-        return command in self._running_commands
+        return command in self._process_list
 
     def process(self, command) -> bool:
         return True
@@ -47,7 +47,7 @@ class RestartCommand(StrategyBase):
         return "duplication:restart"
 
     def _find_running_instance(self, command):
-        for job_instance in self._running_commands:
+        for job_instance in self._process_list:
             if command == job_instance:
                 return job_instance
 

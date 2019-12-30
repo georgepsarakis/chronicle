@@ -7,6 +7,7 @@ from chronicle.job import Job
 from chronicle.crontab import Crontab, AlreadyConfigured
 from chronicle.backend import RedisBackend, StrictRedis
 from chronicle.execution.strategies import find_strategy_by_alias
+from chronicle.validation.configuration import Configuration
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ class Application:
         return self._crontab
 
     def create(self):
+        self._validate()
         configuration = self._configure()
         logger.info(f"Creating crontab with configuration: {configuration}")
         self._crontab = Crontab(**configuration)
@@ -41,6 +43,9 @@ class Application:
     def _get_jobs():
         return settings.JOBS
 
+    def _validate(self):
+        Configuration().load(self._configuration.as_dict())
+
     def _configure(self):
         if self._is_configured:
             raise AlreadyConfigured
@@ -48,7 +53,6 @@ class Application:
         cron_jobs = []
         for parameters in self._get_jobs():
             cron_job = Job.from_dict(parameters)
-            logger.info(parameters)
             cron_jobs.append(cron_job)
         Crontab.setup(cron_jobs)
 

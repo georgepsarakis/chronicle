@@ -10,11 +10,13 @@ source_files = ("chronicle", "tests", "setup.py", "noxfile.py")
 def install_dependencies(session):
     session.install(
         "--upgrade",
-        "-r", "install/requirements/dev.txt",
-        "-r", "install/requirements/base.txt"
+        "-r",
+        "install/requirements/dev.txt",
+        "-r",
+        "install/requirements/base.txt",
     )
     # Install project
-    session.install('-e', '.')
+    session.install("-e", ".")
 
 
 @nox.session
@@ -42,7 +44,7 @@ def check(session):
     session.run("flake8", *source_files)
 
 
-@nox.session(python=['3', "3.6", "3.7", "3.8"])
+@nox.session(python=["3", "3.6", "3.7", "3.8"])
 def test(session):
     install_dependencies(session)
     session.run("python", "-m", "pytest", "-v", "--cov=chronicle", "tests")

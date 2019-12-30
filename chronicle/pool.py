@@ -1,3 +1,4 @@
+from collections.abc import MutableSet
 from typing import Union
 import logging
 
@@ -31,7 +32,7 @@ class StrategyHandler:
         return True
 
 
-class ProcessList:
+class ProcessList(MutableSet):
     def __init__(self):
         self._running_commands = set()
 
@@ -48,8 +49,18 @@ class ProcessList:
     def remove(self, command):
         self._running_commands.remove(command)
 
-    def contains(self, command):
+    def discard(self, command):
+        self._running_commands.discard(command)
+
+    def __contains__(self, command):
         return command in self._running_commands
+
+    def __len__(self):
+        return len(self._running_commands)
+
+    def __iter__(self):
+        for command in self._running_commands:
+            yield command
 
 
 class TrioPool:

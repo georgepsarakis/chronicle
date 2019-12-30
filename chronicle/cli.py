@@ -17,11 +17,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+LOGGING_FORMAT = {
+    "compact": "%(asctime) %(process) %(levelname) %(message)",
+    "extended": "%(asctime) %(process) %(levelname) "
+    "%(name) %(funcName) %(lineno) %(message)",
+}
+
 logger.parent.handlers[0].setFormatter(
-    jsonlogger.JsonFormatter(
-        "%(asctime) %(process) %(levelname) "
-        "%(name) %(module) %(funcName) %(lineno) %(message)"
-    )
+    jsonlogger.JsonFormatter(LOGGING_FORMAT[settings["LOGGING"].get("format")])
 )
 
 
