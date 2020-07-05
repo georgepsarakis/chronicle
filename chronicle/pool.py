@@ -62,6 +62,9 @@ class ProcessList(MutableSet):
         for command in self._running_commands:
             yield command
 
+    def is_empty(self) -> bool:
+        return len(self) == 0
+
 
 class TrioPool:
     def __init__(self, concurrency: Union[int, None], execution_strategies=None):
@@ -110,4 +113,6 @@ class TrioPool:
             try:
                 self.processlist.remove(command)
             except KeyError:
-                log_helper.generate(self.processlist.commands, tags=["pool", "removal"])
+                log_helper.generate(
+                    self.processlist.commands, tags=["pool", "removal", "failure"]
+                )

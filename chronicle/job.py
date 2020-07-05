@@ -80,6 +80,10 @@ class CronCommand:
         self._identifier = str(uuid4())
         self._started_at = None
         self._process = None
+        self._dry_run = options.get("dry_run", False)
+
+    def enable_dry_run(self):
+        self._dry_run = True
 
     def clone(self):
         new_instance = self.__class__(self._command, **self._options)
@@ -147,6 +151,18 @@ class CronCommand:
             additional_environment[name] = value
 
         environment.update(additional_environment)
+
+        if self._dry_run:
+            logger.info(
+                log_helper.generate(
+                    message=self._get_executable(),
+                    task_id=self.identifier,
+                    stream=None,
+                    tags=["command", "execution"],
+                    environment=environment,
+                    status="DRY_RUN",
+                )
+            )
 
         with trio.move_on_after(self.timeout) as cancel_scope:
             self._process = await trio.open_process(
@@ -260,6 +276,9 @@ class Job:
         self._interval = interval
         self._command = command
         self._initial_time = None
+
+    def enable_dry_run(self):
+        self.command.enable_dry_run()
 
     def set_initial_time(self, value: int):
         self._initial_time = value
