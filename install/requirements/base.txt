@@ -10,7 +10,7 @@ immutables==0.11
 outcome==1.0.1
 python-dateutil==2.8.0
 python-json-logger==0.1.11
-redis==3.3.8
+redis==4.5.3
 six==1.12.0
 sniffio==1.1.0
 sortedcontainers==2.1.0
